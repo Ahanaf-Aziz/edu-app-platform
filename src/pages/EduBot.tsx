@@ -10,6 +10,7 @@ import { Send, Mic, MessageSquare } from "lucide-react";
 import PageTransition from "@/components/layout/PageTransition";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 
 interface Message {
   id: string;
@@ -28,89 +29,31 @@ const EduBot = () => {
     },
   ]);
   const [inputText, setInputText] = useState("");
-  const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  // Speech recognition setup
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const [transcript, setTranscript] = useState("");
+  // Use our custom speech recognition hook
+  const {
+    isListening,
+    transcript,
+    startListening,
+    stopListening,
+    hasRecognitionSupport
+  } = useSpeechRecognition();
 
-  // Initialize speech recognition
+  // Update input text when transcript changes
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // Check if the browser supports the Web Speech API
-      const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-      
-      if (SpeechRecognitionAPI) {
-        const recognition = new SpeechRecognitionAPI();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
-        
-        recognition.onresult = (event) => {
-          let currentTranscript = '';
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-              currentTranscript += transcript;
-            }
-          }
-          
-          if (currentTranscript) {
-            setTranscript(currentTranscript);
-            setInputText(currentTranscript);
-          }
-        };
-        
-        recognition.onerror = (event) => {
-          console.error('Speech recognition error', event.error);
-          if (event.error === 'not-allowed') {
-            toast.error('Microphone access denied. Please allow microphone access to use voice input.');
-          } else {
-            toast.error(`Speech recognition error: ${event.error}`);
-          }
-          setIsListening(false);
-        };
-        
-        recognition.onend = () => {
-          if (isListening) {
-            recognition.start();
-          }
-        };
-        
-        recognitionRef.current = recognition;
-      } else {
-        toast.error('Your browser does not support speech recognition. Please try using Chrome or Edge.');
-      }
+    if (transcript) {
+      setInputText(transcript);
     }
-    
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-    };
-  }, []);
-
-  // Handle starting and stopping the speech recognition
+  }, [transcript]);
+  
+  // Check browser support on component mount
   useEffect(() => {
-    const recognition = recognitionRef.current;
-    
-    if (recognition) {
-      if (isListening) {
-        try {
-          recognition.start();
-          toast.info("Listening...", { duration: 1000 });
-        } catch (error) {
-          // Handling the case where recognition is already started
-          console.log("Recognition already started:", error);
-        }
-      } else if (!isProcessing) {
-        recognition.stop();
-        setTranscript("");
-      }
+    if (!hasRecognitionSupport) {
+      toast.error('Your browser does not support speech recognition. Please try using Chrome or Edge.');
     }
-  }, [isListening, isProcessing]);
+  }, [hasRecognitionSupport]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -159,12 +102,12 @@ const EduBot = () => {
     }, 1500);
   };
 
-  const startListening = () => {
-    setIsListening(true);
+  const handleVoiceStart = () => {
+    startListening();
   };
 
-  const stopListening = () => {
-    setIsListening(false);
+  const handleVoiceStop = () => {
+    stopListening();
     setIsProcessing(true);
     
     // Submit the transcript after stopping
@@ -272,8 +215,8 @@ const EduBot = () => {
                 
                 <div className="border-t p-6 bg-background/50 backdrop-blur-sm flex justify-center">
                   <VoiceButton
-                    onStart={startListening}
-                    onStop={stopListening}
+                    onStart={handleVoiceStart}
+                    onStop={handleVoiceStop}
                     isListening={isListening}
                     isProcessing={isProcessing}
                   />
