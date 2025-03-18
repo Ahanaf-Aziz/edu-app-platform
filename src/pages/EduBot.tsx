@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { VoiceButton } from "@/components/ui/voice-button";
@@ -31,21 +31,86 @@ const EduBot = () => {
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Speech recognition setup
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const [transcript, setTranscript] = useState("");
 
-  // Simulating speech recognition
+  // Initialize speech recognition
   useEffect(() => {
-    if (isListening) {
-      // In a real app, we would initialize the Web Speech API here
-      toast.info("Listening...", { duration: 1000 });
+    if (typeof window !== 'undefined') {
+      // Check if the browser supports the Web Speech API
+      const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
       
-      // Simulating browser asking for microphone permission
-      const timer = setTimeout(() => {
-        toast.success("Microphone access granted", { duration: 1500 });
-      }, 1000);
-      
-      return () => clearTimeout(timer);
+      if (SpeechRecognitionAPI) {
+        const recognition = new SpeechRecognitionAPI();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+        
+        recognition.onresult = (event) => {
+          let currentTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              currentTranscript += transcript;
+            }
+          }
+          
+          if (currentTranscript) {
+            setTranscript(currentTranscript);
+            setInputText(currentTranscript);
+          }
+        };
+        
+        recognition.onerror = (event) => {
+          console.error('Speech recognition error', event.error);
+          if (event.error === 'not-allowed') {
+            toast.error('Microphone access denied. Please allow microphone access to use voice input.');
+          } else {
+            toast.error(`Speech recognition error: ${event.error}`);
+          }
+          setIsListening(false);
+        };
+        
+        recognition.onend = () => {
+          if (isListening) {
+            recognition.start();
+          }
+        };
+        
+        recognitionRef.current = recognition;
+      } else {
+        toast.error('Your browser does not support speech recognition. Please try using Chrome or Edge.');
+      }
     }
-  }, [isListening]);
+    
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  // Handle starting and stopping the speech recognition
+  useEffect(() => {
+    const recognition = recognitionRef.current;
+    
+    if (recognition) {
+      if (isListening) {
+        try {
+          recognition.start();
+          toast.info("Listening...", { duration: 1000 });
+        } catch (error) {
+          // Handling the case where recognition is already started
+          console.log("Recognition already started:", error);
+        }
+      } else if (!isProcessing) {
+        recognition.stop();
+        setTranscript("");
+      }
+    }
+  }, [isListening, isProcessing]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -55,7 +120,7 @@ const EduBot = () => {
     // Add user message
     const userMessage: Message = {
       id: Date.now().toString(),
-      content: inputText.trim() || "...", // If voice input, placeholder
+      content: inputText.trim(),
       sender: "user",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
@@ -75,18 +140,8 @@ const EduBot = () => {
         responseContent = "For math problems, try to break them down step by step. What specific equation or concept are you working with?";
       } else if (inputText.toLowerCase().includes("feedback")) {
         responseContent = "I'd be happy to give you feedback! Please share your answer or question, and I'll analyze it for you.";
-      } else if (!inputText) {
-        // Voice input simulation
-        responseContent = "I heard you mention something about history. If you're working on a history assignment, make sure to include specific dates and cite your sources.";
-        
-        // Update the user message content from "..." to simulated transcription
-        setMessages((prev) => 
-          prev.map((msg) => 
-            msg.id === userMessage.id 
-              ? { ...msg, content: "Can you help me with my history assignment?" } 
-              : msg
-          )
-        );
+      } else if (inputText.toLowerCase().includes("history")) {
+        responseContent = "When studying history, focus on understanding the context and causality of events rather than just memorizing dates. What period are you studying?";
       } else {
         responseContent = "Thank you for your input. When answering this type of question, consider addressing the key concepts and providing specific examples to support your points. Also, try to structure your response with a clear introduction and conclusion.";
       }
@@ -106,18 +161,19 @@ const EduBot = () => {
 
   const startListening = () => {
     setIsListening(true);
-    // In a real app, we would start the speech recognition here
   };
 
   const stopListening = () => {
     setIsListening(false);
     setIsProcessing(true);
     
-    // Simulate processing of voice input
+    // Submit the transcript after stopping
     setTimeout(() => {
       setIsProcessing(false);
-      handleSubmit();
-    }, 1000);
+      if (transcript.trim()) {
+        handleSubmit();
+      }
+    }, 500);
   };
 
   return (
@@ -207,6 +263,12 @@ const EduBot = () => {
                     />
                   )}
                 </div>
+                
+                {isListening && (
+                  <div className="px-4 py-2 bg-primary/10 border-t border-primary/20 text-center text-sm">
+                    <p>{transcript || "Listening..."}</p>
+                  </div>
+                )}
                 
                 <div className="border-t p-6 bg-background/50 backdrop-blur-sm flex justify-center">
                   <VoiceButton
