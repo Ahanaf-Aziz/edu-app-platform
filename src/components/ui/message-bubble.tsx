@@ -41,7 +41,7 @@ export function MessageBubble({
       transition: {
         duration: 0.8,
         repeat: Infinity,
-        repeatType: "reverse",
+        repeatType: "reverse" as const,
       },
     },
   };
