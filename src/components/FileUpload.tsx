@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileText, Upload, X, Mic, MicOff } from "lucide-react";
@@ -22,8 +22,23 @@ const FileUpload = ({
   showVoiceInput = false 
 }: FileUploadProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const { transcript, isListening, startListening, stopListening, hasRecognitionSupport } = useSpeechRecognition();
+  const { 
+    transcript, 
+    isListening, 
+    startListening, 
+    stopListening, 
+    resetTranscript,
+    hasRecognitionSupport 
+  } = useSpeechRecognition();
+  
   const [voiceText, setVoiceText] = useState("");
+  
+  // Update voice text when transcript changes while listening
+  useEffect(() => {
+    if (isListening && transcript) {
+      setVoiceText(transcript);
+    }
+  }, [transcript, isListening]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -48,12 +63,9 @@ const FileUpload = ({
   const handleVoiceToggle = () => {
     if (isListening) {
       stopListening();
-      if (transcript && onVoiceInput) {
-        onVoiceInput(transcript);
-        setVoiceText(transcript);
-        toast.success("Voice input saved successfully");
-      }
+      // Transcript is already set via the useEffect
     } else {
+      resetTranscript();
       setVoiceText("");
       startListening();
     }
@@ -63,6 +75,8 @@ const FileUpload = ({
     if (voiceText.trim() && onVoiceInput) {
       onVoiceInput(voiceText);
       toast.success("Voice input saved successfully");
+      setVoiceText("");
+      resetTranscript();
     } else {
       toast.error("No voice input to save");
     }
@@ -98,27 +112,39 @@ const FileUpload = ({
         </div>
       )}
 
-      {showVoiceInput && hasRecognitionSupport && (
+      {showVoiceInput && (
         <div className="mt-4 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Voice Input</span>
-            <Button 
-              size="sm" 
-              variant={isListening ? "destructive" : "outline"}
-              onClick={handleVoiceToggle}
-            >
-              {isListening ? (
-                <>
-                  <MicOff className="h-4 w-4 mr-1" />
-                  Stop Recording
-                </>
-              ) : (
-                <>
-                  <Mic className="h-4 w-4 mr-1" />
-                  Start Recording
-                </>
-              )}
-            </Button>
+            {hasRecognitionSupport ? (
+              <Button 
+                size="sm" 
+                variant={isListening ? "destructive" : "outline"}
+                onClick={handleVoiceToggle}
+              >
+                {isListening ? (
+                  <>
+                    <MicOff className="h-4 w-4 mr-1" />
+                    Stop Recording
+                  </>
+                ) : (
+                  <>
+                    <Mic className="h-4 w-4 mr-1" />
+                    Start Recording
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button 
+                size="sm" 
+                variant="outline" 
+                disabled 
+                title="Speech recognition not supported in your browser"
+              >
+                <Mic className="h-4 w-4 mr-1" />
+                Not Supported
+              </Button>
+            )}
           </div>
           
           {(isListening || voiceText) && (
@@ -127,7 +153,7 @@ const FileUpload = ({
                 {isListening ? "Recording..." : "Recorded text:"}
               </p>
               <p className="text-sm italic">
-                {isListening ? transcript : voiceText || "No voice input detected"}
+                {isListening ? transcript || "Listening..." : voiceText || "No voice input detected"}
               </p>
               
               {!isListening && voiceText && (

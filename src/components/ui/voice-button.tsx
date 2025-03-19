@@ -1,9 +1,10 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Mic, MicOff, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 
 interface VoiceButtonProps {
   onStart: () => void;
@@ -11,6 +12,7 @@ interface VoiceButtonProps {
   isListening?: boolean;
   isProcessing?: boolean;
   className?: string;
+  disabled?: boolean;
 }
 
 export function VoiceButton({
@@ -19,18 +21,48 @@ export function VoiceButton({
   isListening = false,
   isProcessing = false,
   className,
+  disabled = false,
 }: VoiceButtonProps) {
   const [ripples, setRipples] = useState<{ id: number; x: number; y: number }[]>([]);
   
+  // Check browser compatibility at the component level
+  const [isSupportedBrowser, setIsSupportedBrowser] = useState(true);
+  
+  useEffect(() => {
+    // Check if the browser supports the Web Speech API
+    if (typeof window !== 'undefined') {
+      const hasSpeechRecognition = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+      setIsSupportedBrowser(hasSpeechRecognition);
+      
+      if (!hasSpeechRecognition) {
+        console.warn("Speech Recognition not supported in this browser");
+      }
+    }
+  }, []);
+  
   const handleClick = () => {
+    if (!isSupportedBrowser) {
+      toast.error("Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.");
+      return;
+    }
+    
+    if (disabled) return;
+    
     if (isListening) {
       onStop();
     } else {
-      onStart();
+      try {
+        onStart();
+      } catch (error) {
+        console.error("Error starting voice recording:", error);
+        toast.error("Failed to start recording. Please try again.");
+      }
     }
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+    
     const button = e.currentTarget;
     const rect = button.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -49,6 +81,8 @@ export function VoiceButton({
     }, 600);
   };
 
+  const isButtonDisabled = disabled || !isSupportedBrowser;
+
   return (
     <div className={cn("relative", className)}>
       <Button
@@ -60,9 +94,10 @@ export function VoiceButton({
           isListening ? "animate-pulse" : "",
           className
         )}
-        disabled={isProcessing}
+        disabled={isButtonDisabled || isProcessing}
         onClick={handleClick}
         onMouseDown={handleMouseDown}
+        title={!isSupportedBrowser ? "Speech recognition not supported in your browser" : ""}
       >
         <div className="flex items-center space-x-2">
           {isProcessing ? (
@@ -72,7 +107,15 @@ export function VoiceButton({
           ) : (
             <Mic className="h-5 w-5" />
           )}
-          <span>{isProcessing ? "Processing" : isListening ? "Stop Recording" : "Start Recording"}</span>
+          <span>
+            {isProcessing 
+              ? "Processing" 
+              : isListening 
+                ? "Stop Recording" 
+                : !isSupportedBrowser 
+                  ? "Not Supported" 
+                  : "Start Recording"}
+          </span>
         </div>
         
         {ripples.map((ripple) => (
