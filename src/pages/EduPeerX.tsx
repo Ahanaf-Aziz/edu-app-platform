@@ -25,13 +25,33 @@ import {
   Bot,
   Brain,
   MessageSquare,
+  PlusCircle,
 } from "lucide-react";
 import PageTransition from "@/components/layout/PageTransition";
 import { toast } from "sonner";
-import FileUpload from "@/components/FileUpload";
+import FileUpload, { FileMetadata } from "@/components/FileUpload";
 import { MessageBubble } from "@/components/ui/message-bubble";
 
-const assignments = [
+interface Assignment {
+  id: number;
+  title: string;
+  description: string;
+  dueDate: string;
+  status: string;
+  numReviews: number;
+  attachments: FileMetadata[];
+}
+
+interface PeerWork {
+  id: number;
+  studentName: string;
+  title: string;
+  preview: string;
+  reviewStatus: string;
+  attachments: FileMetadata[];
+}
+
+const assignments: Assignment[] = [
   {
     id: 1,
     title: "Essay on Climate Change",
@@ -52,7 +72,7 @@ const assignments = [
   },
 ];
 
-const peerWork = [
+const peerWork: PeerWork[] = [
   {
     id: 101,
     studentName: "Alex Johnson",
@@ -135,8 +155,8 @@ const EduPeerX = () => {
   const [reviewText, setReviewText] = useState("");
   const [showReview, setShowReview] = useState(false);
   const [progress, setProgress] = useState(65);
-  const [myAssignments, setMyAssignments] = useState(assignments);
-  const [peerAssignments, setPeerAssignments] = useState(peerWork);
+  const [myAssignments, setMyAssignments] = useState<Assignment[]>(assignments);
+  const [peerAssignments, setPeerAssignments] = useState<PeerWork[]>(peerWork);
   const [selectedAssignment, setSelectedAssignment] = useState<number | null>(null);
   const [showUploadForm, setShowUploadForm] = useState<{ type: "assignment" | "peer", id: number } | null>(null);
   const [reviewMessages, setReviewMessages] = useState<{role: "user" | "assistant", content: string}[]>([]);
@@ -144,6 +164,7 @@ const EduPeerX = () => {
   const [showAIGuidelines, setShowAIGuidelines] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState("");
   const [biasDetected, setBiasDetected] = useState(false);
+  const [showNewAssignmentForm, setShowNewAssignmentForm] = useState(false);
 
   const handleSubmitReview = () => {
     if (reviewText.trim().length < 10) {
@@ -182,35 +203,48 @@ const EduPeerX = () => {
     setShowAIGuidelines(true);
   };
 
-  const handleFileUpload = (file: File) => {
-    if (!showUploadForm) return;
+  const handleFileUpload = (file: File, metadata: FileMetadata) => {
+    if (!showUploadForm && !showNewAssignmentForm) return;
     
-    const fileDetails = {
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      uploadedAt: new Date().toISOString(),
-    };
+    if (showNewAssignmentForm) {
+      const newAssignment: Assignment = {
+        id: Math.max(...myAssignments.map(a => a.id)) + 1,
+        title: metadata.title || "New Assignment",
+        description: metadata.description || "No description provided",
+        dueDate: metadata.dueDate ? format(metadata.dueDate, "MMMM d, yyyy") : "No due date",
+        status: "Not Submitted",
+        numReviews: 0,
+        attachments: [metadata],
+      };
+      
+      setMyAssignments(prev => [...prev, newAssignment]);
+      setShowNewAssignmentForm(false);
+      toast.success("New assignment created successfully!");
+      return;
+    }
+    
+    if (!showUploadForm) return;
     
     if (showUploadForm.type === "assignment") {
       setMyAssignments(prev => 
         prev.map(assignment => 
           assignment.id === showUploadForm.id 
-            ? { ...assignment, attachments: [...assignment.attachments, fileDetails] }
+            ? { ...assignment, attachments: [...assignment.attachments, metadata] }
             : assignment
         )
       );
+      toast.success("Document uploaded to assignment!");
     } else {
       setPeerAssignments(prev => 
         prev.map(work => 
           work.id === showUploadForm.id 
-            ? { ...work, attachments: [...work.attachments, fileDetails] }
+            ? { ...work, attachments: [...work.attachments, metadata] }
             : work
         )
       );
+      toast.success("Document uploaded for peer review!");
     }
     
-    toast.success("Document uploaded successfully!");
     setShowUploadForm(null);
     setSelectedAssignment(null);
   };
@@ -241,6 +275,21 @@ const EduPeerX = () => {
   const getReviewGuidelines = () => {
     const guidelines = aiGuidelines[currentAssignmentTitle as keyof typeof aiGuidelines] || [];
     return guidelines.length > 0 ? guidelines : aiGuidelines["Essay on Climate Change"];
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' bytes';
+    else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    else return (bytes / 1048576).toFixed(1) + ' MB';
+  };
+
+  const formatDate = (dateString: string): string => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString();
+    } catch (e) {
+      return "Unknown date";
+    }
   };
 
   return (
@@ -286,6 +335,30 @@ const EduPeerX = () => {
                   </TabsList>
                   
                   <TabsContent value="assignments" className="space-y-4">
+                    <div className="flex justify-end mb-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setShowNewAssignmentForm(!showNewAssignmentForm)}
+                        className="flex items-center"
+                      >
+                        <PlusCircle className="h-4 w-4 mr-1" />
+                        {showNewAssignmentForm ? "Cancel" : "Create New Assignment"}
+                      </Button>
+                    </div>
+                    
+                    {showNewAssignmentForm && (
+                      <div className="border rounded-lg p-4 bg-card shadow-subtle mb-4">
+                        <h3 className="font-medium mb-3">Create New Assignment</h3>
+                        <FileUpload 
+                          onFileUpload={handleFileUpload}
+                          showMetadataForm={true}
+                          metadataType="assignment"
+                          label="Upload Assignment Document"
+                        />
+                      </div>
+                    )}
+                    
                     {myAssignments.map((assignment) => (
                       <div
                         key={assignment.id}
@@ -323,9 +396,17 @@ const EduPeerX = () => {
                             </h4>
                             <div className="space-y-2">
                               {assignment.attachments.map((file, index) => (
-                                <div key={index} className="flex items-center text-sm bg-muted/40 rounded p-2">
-                                  <File className="h-4 w-4 mr-2 text-primary" />
-                                  <span className="truncate">{file.name}</span>
+                                <div key={index} className="flex items-center justify-between text-sm bg-muted/40 rounded p-2">
+                                  <div className="flex items-center flex-1 truncate mr-2">
+                                    <File className="h-4 w-4 mr-2 text-primary flex-shrink-0" />
+                                    <div className="truncate">
+                                      <p className="font-medium truncate">{file.fileName}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {formatFileSize(file.fileSize)} • Uploaded: {formatDate(file.uploadedAt)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <Button variant="ghost" size="sm">Download</Button>
                                 </div>
                               ))}
                             </div>
@@ -349,7 +430,10 @@ const EduPeerX = () => {
                         {showUploadForm?.id === assignment.id && showUploadForm?.type === "assignment" && (
                           <div className="mt-4 border-t pt-3">
                             <h4 className="text-sm font-medium mb-2">Upload Assignment Document</h4>
-                            <FileUpload onFileUpload={handleFileUpload} />
+                            <FileUpload 
+                              onFileUpload={handleFileUpload} 
+                              showMetadataForm={true}
+                            />
                           </div>
                         )}
                       </div>
@@ -385,9 +469,17 @@ const EduPeerX = () => {
                                   </h4>
                                   <div className="space-y-1">
                                     {work.attachments.map((file, index) => (
-                                      <div key={index} className="flex items-center text-xs bg-muted/40 rounded p-1.5">
-                                        <File className="h-3 w-3 mr-1 text-primary" />
-                                        <span className="truncate">{file.name}</span>
+                                      <div key={index} className="flex items-center justify-between text-xs bg-muted/40 rounded p-1.5">
+                                        <div className="flex items-center flex-1 truncate mr-2">
+                                          <File className="h-3 w-3 mr-1 text-primary flex-shrink-0" />
+                                          <div className="truncate">
+                                            <p className="font-medium truncate">{file.fileName}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                              {formatFileSize(file.fileSize)} • Uploaded: {formatDate(file.uploadedAt)}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <Button variant="ghost" size="sm" className="h-6 px-2">View</Button>
                                       </div>
                                     ))}
                                   </div>
@@ -420,6 +512,8 @@ const EduPeerX = () => {
                                   <FileUpload 
                                     onFileUpload={handleFileUpload} 
                                     label="Upload Supporting Document" 
+                                    showMetadataForm={true}
+                                    metadataType="peer"
                                   />
                                 </div>
                               )}
@@ -547,7 +641,7 @@ const EduPeerX = () => {
                           </div>
                           
                           <FileUpload 
-                            onFileUpload={() => {}} 
+                            onFileUpload={(file, metadata) => {}} 
                             onVoiceInput={handleVoiceInput} 
                             showVoiceInput={true}
                             label="Record Voice Feedback"

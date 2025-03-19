@@ -2,16 +2,35 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Upload, X, Mic, MicOff } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { FileText, Upload, X, Mic, MicOff, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { Textarea } from "@/components/ui/textarea";
+import { Form, FormItem, FormLabel, FormControl } from "@/components/ui/form";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+
+export interface FileMetadata {
+  title?: string;
+  description?: string;
+  dueDate?: Date;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  uploadedAt: string;
+}
 
 interface FileUploadProps {
-  onFileUpload: (file: File) => void;
+  onFileUpload: (file: File, metadata: FileMetadata) => void;
   onVoiceInput?: (text: string) => void;
   label?: string;
   allowedTypes?: string;
   showVoiceInput?: boolean;
+  showMetadataForm?: boolean;
+  metadataType?: "assignment" | "peer";
 }
 
 const FileUpload = ({ 
@@ -19,7 +38,9 @@ const FileUpload = ({
   onVoiceInput, 
   label = "Upload Document", 
   allowedTypes = ".pdf,.doc,.docx", 
-  showVoiceInput = false 
+  showVoiceInput = false,
+  showMetadataForm = false,
+  metadataType = "assignment"
 }: FileUploadProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { 
@@ -32,6 +53,9 @@ const FileUpload = ({
   } = useSpeechRecognition();
   
   const [voiceText, setVoiceText] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
   
   // Update voice text when transcript changes while listening
   useEffect(() => {
@@ -43,21 +67,54 @@ const FileUpload = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0]);
+      
+      // Auto-populate title from filename if empty
+      if (!title) {
+        const fileName = e.target.files[0].name;
+        // Remove file extension
+        const titleFromFile = fileName.split('.').slice(0, -1).join('.');
+        setTitle(titleFromFile);
+      }
     }
   };
 
   const handleUpload = () => {
-    if (selectedFile) {
-      onFileUpload(selectedFile);
-      toast.success(`File "${selectedFile.name}" uploaded successfully`);
-      setSelectedFile(null);
-    } else {
+    if (!selectedFile) {
       toast.error("Please select a file first");
+      return;
     }
+    
+    if (showMetadataForm && !title.trim()) {
+      toast.error("Please provide a title for your document");
+      return;
+    }
+    
+    // Create metadata object
+    const metadata: FileMetadata = {
+      title: title.trim() || selectedFile.name,
+      description: description.trim() || undefined,
+      dueDate: metadataType === "assignment" ? dueDate : undefined,
+      fileName: selectedFile.name,
+      fileSize: selectedFile.size,
+      fileType: selectedFile.type,
+      uploadedAt: new Date().toISOString(),
+    };
+    
+    onFileUpload(selectedFile, metadata);
+    toast.success(`File "${selectedFile.name}" uploaded successfully`);
+    
+    // Reset form
+    setSelectedFile(null);
+    setTitle("");
+    setDescription("");
+    setDueDate(undefined);
   };
 
   const clearSelection = () => {
     setSelectedFile(null);
+    setTitle("");
+    setDescription("");
+    setDueDate(undefined);
   };
 
   const handleVoiceToggle = () => {
@@ -83,7 +140,61 @@ const FileUpload = ({
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {showMetadataForm && (
+        <div className="space-y-4 p-4 border rounded-md bg-muted/20">
+          <div className="space-y-2">
+            <Label htmlFor="document-title">Title</Label>
+            <Input 
+              id="document-title" 
+              placeholder={metadataType === "assignment" ? "Assignment Title" : "Document Title"}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="document-description">Description</Label>
+            <Textarea 
+              id="document-description" 
+              placeholder={metadataType === "assignment" ? "Describe the assignment requirements" : "Description of your work"}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="min-h-[80px]"
+            />
+          </div>
+          
+          {metadataType === "assignment" && (
+            <div className="space-y-2">
+              <Label>Due Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !dueDate && "text-muted-foreground"
+                    )}
+                  >
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {dueDate ? format(dueDate, "PPP") : <span>Select a due date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={dueDate}
+                    onSelect={setDueDate}
+                    initialFocus
+                    className="p-3 pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex items-center gap-2">
         <Input
           type="file"
