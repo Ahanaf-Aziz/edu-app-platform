@@ -2,17 +2,28 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Upload, X } from "lucide-react";
+import { FileText, Upload, X, Mic, MicOff } from "lucide-react";
 import { toast } from "sonner";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 
 interface FileUploadProps {
   onFileUpload: (file: File) => void;
+  onVoiceInput?: (text: string) => void;
   label?: string;
   allowedTypes?: string;
+  showVoiceInput?: boolean;
 }
 
-const FileUpload = ({ onFileUpload, label = "Upload Document", allowedTypes = ".pdf,.doc,.docx" }: FileUploadProps) => {
+const FileUpload = ({ 
+  onFileUpload, 
+  onVoiceInput, 
+  label = "Upload Document", 
+  allowedTypes = ".pdf,.doc,.docx", 
+  showVoiceInput = false 
+}: FileUploadProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const { transcript, isListening, startListening, stopListening, hasRecognitionSupport } = useSpeechRecognition();
+  const [voiceText, setVoiceText] = useState("");
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -32,6 +43,29 @@ const FileUpload = ({ onFileUpload, label = "Upload Document", allowedTypes = ".
 
   const clearSelection = () => {
     setSelectedFile(null);
+  };
+
+  const handleVoiceToggle = () => {
+    if (isListening) {
+      stopListening();
+      if (transcript && onVoiceInput) {
+        onVoiceInput(transcript);
+        setVoiceText(transcript);
+        toast.success("Voice input saved successfully");
+      }
+    } else {
+      setVoiceText("");
+      startListening();
+    }
+  };
+
+  const handleSubmitVoiceText = () => {
+    if (voiceText.trim() && onVoiceInput) {
+      onVoiceInput(voiceText);
+      toast.success("Voice input saved successfully");
+    } else {
+      toast.error("No voice input to save");
+    }
   };
 
   return (
@@ -61,6 +95,50 @@ const FileUpload = ({ onFileUpload, label = "Upload Document", allowedTypes = ".
             <Upload className="h-4 w-4 mr-1" />
             Upload
           </Button>
+        </div>
+      )}
+
+      {showVoiceInput && hasRecognitionSupport && (
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Voice Input</span>
+            <Button 
+              size="sm" 
+              variant={isListening ? "destructive" : "outline"}
+              onClick={handleVoiceToggle}
+            >
+              {isListening ? (
+                <>
+                  <MicOff className="h-4 w-4 mr-1" />
+                  Stop Recording
+                </>
+              ) : (
+                <>
+                  <Mic className="h-4 w-4 mr-1" />
+                  Start Recording
+                </>
+              )}
+            </Button>
+          </div>
+          
+          {(isListening || voiceText) && (
+            <div className="p-3 border rounded-md bg-muted/20">
+              <p className="text-sm mb-2">
+                {isListening ? "Recording..." : "Recorded text:"}
+              </p>
+              <p className="text-sm italic">
+                {isListening ? transcript : voiceText || "No voice input detected"}
+              </p>
+              
+              {!isListening && voiceText && (
+                <div className="mt-2 flex justify-end">
+                  <Button size="sm" onClick={handleSubmitVoiceText}>
+                    Submit Voice Input
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

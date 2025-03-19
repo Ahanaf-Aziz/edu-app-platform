@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,10 +20,16 @@ import {
   FileText,
   Upload,
   File,
+  Mic,
+  AlertTriangle,
+  Bot,
+  Brain,
+  MessageSquare,
 } from "lucide-react";
 import PageTransition from "@/components/layout/PageTransition";
 import { toast } from "sonner";
 import FileUpload from "@/components/FileUpload";
+import { MessageBubble } from "@/components/ui/message-bubble";
 
 const assignments = [
   {
@@ -90,6 +95,41 @@ const badges = [
   },
 ];
 
+const aiGuidelines = {
+  "Essay on Climate Change": [
+    "Check if the essay addresses the main impacts of climate change",
+    "Verify if scientific evidence is properly cited",
+    "Look for a clear thesis statement and conclusion",
+    "Assess if counterarguments are addressed"
+  ],
+  "Math Problem Set": [
+    "Verify the correctness of mathematical operations",
+    "Check if proper formulas are applied",
+    "Assess if the approach is clearly explained",
+    "Look for proper units in the answer"
+  ],
+  "The Impact of Social Media": [
+    "Check if both positive and negative impacts are discussed",
+    "Verify if the essay provides real-world examples",
+    "Assess the clarity of arguments",
+    "Look for a balanced perspective"
+  ],
+  "Analysis of Macbeth": [
+    "Check if key themes are identified and analyzed",
+    "Verify if textual evidence supports the analysis",
+    "Assess the depth of character analysis",
+    "Look for connections to historical context"
+  ]
+};
+
+const aiFeedbackSuggestions = [
+  "Consider adding more specific examples to strengthen your point about...",
+  "The argument could be more convincing with additional evidence for...",
+  "Your analysis of [topic] is strong, but you might want to also consider...",
+  "Try to connect your points more clearly to the main thesis by...",
+  "The structure could be improved by reorganizing the section about..."
+];
+
 const EduPeerX = () => {
   const [activeTab, setActiveTab] = useState("assignments");
   const [reviewText, setReviewText] = useState("");
@@ -99,6 +139,11 @@ const EduPeerX = () => {
   const [peerAssignments, setPeerAssignments] = useState(peerWork);
   const [selectedAssignment, setSelectedAssignment] = useState<number | null>(null);
   const [showUploadForm, setShowUploadForm] = useState<{ type: "assignment" | "peer", id: number } | null>(null);
+  const [reviewMessages, setReviewMessages] = useState<{role: "user" | "assistant", content: string}[]>([]);
+  const [currentAssignmentTitle, setCurrentAssignmentTitle] = useState("");
+  const [showAIGuidelines, setShowAIGuidelines] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState("");
+  const [biasDetected, setBiasDetected] = useState(false);
 
   const handleSubmitReview = () => {
     if (reviewText.trim().length < 10) {
@@ -106,14 +151,35 @@ const EduPeerX = () => {
       return;
     }
     
+    const hasBias = Math.random() > 0.7;
+    
+    if (hasBias) {
+      setBiasDetected(true);
+      toast.warning("Potential bias detected in your review. Please revise for fairness.", {
+        duration: 5000,
+      });
+      return;
+    }
+    
     toast.success("Review submitted successfully!");
     setReviewText("");
     setShowReview(false);
     setProgress((prev) => Math.min(prev + 10, 100));
+    setBiasDetected(false);
+    setAiSuggestion("");
+    setReviewMessages([]);
   };
 
-  const startReview = () => {
+  const startReview = (title: string) => {
+    setCurrentAssignmentTitle(title);
     setShowReview(true);
+    setReviewMessages([
+      {
+        role: "assistant",
+        content: `I'll help you review "${title}". Let me suggest some guidelines for your feedback.`
+      }
+    ]);
+    setShowAIGuidelines(true);
   };
 
   const handleFileUpload = (file: File) => {
@@ -144,6 +210,7 @@ const EduPeerX = () => {
       );
     }
     
+    toast.success("Document uploaded successfully!");
     setShowUploadForm(null);
     setSelectedAssignment(null);
   };
@@ -155,6 +222,25 @@ const EduPeerX = () => {
       setShowUploadForm({ type, id });
       setSelectedAssignment(id);
     }
+  };
+
+  const handleVoiceInput = (text: string) => {
+    if (showReview) {
+      setReviewText(text);
+      const randomSuggestion = aiFeedbackSuggestions[Math.floor(Math.random() * aiFeedbackSuggestions.length)];
+      setAiSuggestion(randomSuggestion);
+      
+      setReviewMessages(prev => [
+        ...prev,
+        { role: "user", content: text },
+        { role: "assistant", content: `Here's a suggestion to improve your feedback: ${randomSuggestion}` }
+      ]);
+    }
+  };
+
+  const getReviewGuidelines = () => {
+    const guidelines = aiGuidelines[currentAssignmentTitle as keyof typeof aiGuidelines] || [];
+    return guidelines.length > 0 ? guidelines : aiGuidelines["Essay on Climate Change"];
   };
 
   return (
@@ -312,9 +398,10 @@ const EduPeerX = () => {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={startReview}
+                                  onClick={() => startReview(work.title)}
                                 >
-                                  Start Review
+                                  <Brain className="h-3 w-3 mr-1" />
+                                  Start AI-Guided Review
                                 </Button>
                                 <Button 
                                   variant="ghost" 
@@ -330,7 +417,10 @@ const EduPeerX = () => {
                               
                               {showUploadForm?.id === work.id && showUploadForm?.type === "peer" && (
                                 <div className="mt-3 pt-2 border-t">
-                                  <FileUpload onFileUpload={handleFileUpload} label="Upload Supporting Document" />
+                                  <FileUpload 
+                                    onFileUpload={handleFileUpload} 
+                                    label="Upload Supporting Document" 
+                                  />
                                 </div>
                               )}
                             </div>
@@ -344,35 +434,123 @@ const EduPeerX = () => {
                         className="border rounded-lg p-4 bg-card shadow-subtle"
                       >
                         <div className="mb-4">
-                          <h3 className="font-medium mb-2">Review: The Impact of Social Media</h3>
+                          <div className="flex justify-between items-center">
+                            <h3 className="font-medium mb-2 flex items-center">
+                              <Bot className="h-4 w-4 mr-2 text-primary" />
+                              AI-Guided Review: {currentAssignmentTitle}
+                            </h3>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => setShowAIGuidelines(!showAIGuidelines)}
+                            >
+                              {showAIGuidelines ? "Hide Guidelines" : "Show Guidelines"}
+                            </Button>
+                          </div>
+                          
+                          {showAIGuidelines && (
+                            <div className="bg-primary/10 rounded-lg p-3 mb-4">
+                              <h4 className="text-sm font-medium text-primary mb-2 flex items-center">
+                                <Brain className="h-4 w-4 mr-1" />
+                                AI Review Guidelines:
+                              </h4>
+                              <ul className="text-sm space-y-2">
+                                {getReviewGuidelines().map((guideline, index) => (
+                                  <li key={index} className="flex items-start">
+                                    <span className="text-primary mr-2">•</span>
+                                    <span>{guideline}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          
                           <div className="bg-muted/30 rounded-lg p-3 text-sm mb-4">
                             <p>Social media has transformed how we communicate and share information in the modern world. Platforms like Facebook, Twitter, and Instagram have created new ways for people to connect, but they have also raised concerns about privacy, mental health, and the spread of misinformation.</p>
                             <p className="mt-2">The convenience of staying connected has to be weighed against the potential negative effects on society. This essay explores both sides of this debate.</p>
                           </div>
                           
-                          <div className="bg-primary/10 rounded-lg p-3 mb-4">
-                            <h4 className="text-sm font-medium text-primary mb-2">AI Review Guidelines:</h4>
-                            <ul className="text-sm space-y-2">
-                              <li className="flex items-start">
-                                <span className="text-primary mr-2">•</span>
-                                <span>Comment on the clarity of their thesis statement</span>
-                              </li>
-                              <li className="flex items-start">
-                                <span className="text-primary mr-2">•</span>
-                                <span>Suggest ways to strengthen their supporting evidence</span>
-                              </li>
-                              <li className="flex items-start">
-                                <span className="text-primary mr-2">•</span>
-                                <span>Consider if they've addressed counterarguments</span>
-                              </li>
-                            </ul>
+                          {reviewMessages.length > 0 && (
+                            <div className="mb-4 p-3 border rounded-lg bg-muted/10">
+                              <h4 className="text-sm font-medium mb-2 flex items-center">
+                                <MessageSquare className="h-4 w-4 mr-1" />
+                                Chat with AI Assistant
+                              </h4>
+                              <div className="space-y-3 max-h-[200px] overflow-y-auto p-2">
+                                {reviewMessages.map((message, idx) => (
+                                  <MessageBubble
+                                    key={idx}
+                                    content={message.content}
+                                    sender={message.role}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <label className="text-sm font-medium">Your Review Feedback:</label>
+                              <div className="flex gap-2">
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => {
+                                    setReviewMessages(prev => [
+                                      ...prev, 
+                                      { 
+                                        role: "user", 
+                                        content: "Can you suggest how to improve my feedback?" 
+                                      },
+                                      {
+                                        role: "assistant",
+                                        content: aiFeedbackSuggestions[Math.floor(Math.random() * aiFeedbackSuggestions.length)]
+                                      }
+                                    ]);
+                                  }}
+                                >
+                                  <Bot className="h-3 w-3 mr-1" />
+                                  Ask AI for Help
+                                </Button>
+                              </div>
+                            </div>
+                            
+                            <Textarea
+                              placeholder="Write your feedback here... Be constructive and specific."
+                              className={`min-h-[120px] ${biasDetected ? 'border-destructive' : ''}`}
+                              value={reviewText}
+                              onChange={(e) => {
+                                setReviewText(e.target.value);
+                                setBiasDetected(false);
+                              }}
+                            />
+                            
+                            {biasDetected && (
+                              <div className="flex items-start gap-2 p-2 border border-destructive/30 bg-destructive/10 rounded-md">
+                                <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+                                <div className="text-sm">
+                                  <p className="font-medium text-destructive">Potential bias detected</p>
+                                  <p className="text-destructive/80 text-xs mt-1">Your feedback may contain harsh criticism or unfair judgment. Please revise to ensure it's constructive and balanced.</p>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {aiSuggestion && !biasDetected && (
+                              <div className="flex items-start gap-2 p-2 border border-primary/30 bg-primary/10 rounded-md">
+                                <Bot className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+                                <div className="text-sm">
+                                  <p className="font-medium text-primary">AI Suggestion</p>
+                                  <p className="text-primary/80 text-xs mt-1">{aiSuggestion}</p>
+                                </div>
+                              </div>
+                            )}
                           </div>
                           
-                          <Textarea
-                            placeholder="Write your feedback here... Be constructive and specific."
-                            className="min-h-[120px]"
-                            value={reviewText}
-                            onChange={(e) => setReviewText(e.target.value)}
+                          <FileUpload 
+                            onFileUpload={() => {}} 
+                            onVoiceInput={handleVoiceInput} 
+                            showVoiceInput={true}
+                            label="Record Voice Feedback"
                           />
                           
                           <div className="flex space-x-2 mt-4">
@@ -382,7 +560,12 @@ const EduPeerX = () => {
                             </Button>
                             <Button
                               variant="outline"
-                              onClick={() => setShowReview(false)}
+                              onClick={() => {
+                                setShowReview(false);
+                                setBiasDetected(false);
+                                setAiSuggestion("");
+                                setReviewMessages([]);
+                              }}
                             >
                               Cancel
                             </Button>
