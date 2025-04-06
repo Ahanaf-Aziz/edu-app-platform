@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageBubble } from "@/components/ui/message-bubble";
 import { Input } from "@/components/ui/input";
-import { Bot, Send, Lightbulb, Brain, FileText, Volume2, VolumeX } from "lucide-react";
+import { Bot, Send, Lightbulb, Brain, FileText, Volume2, VolumeX, Key } from "lucide-react";
 import { toast } from "sonner";
 import { speakWithGoogleTTS } from "@/utils/googleTTS";
 import { motion } from "framer-motion";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 interface GeminiAIProps {
   mode?: "chat" | "generate" | "analyze";
@@ -31,6 +32,15 @@ export function GeminiAI({
   const [isTTSEnabled, setIsTTSEnabled] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Check for API key on mount
+  useEffect(() => {
+    const savedApiKey = localStorage.getItem('geminiApiKey');
+    if (savedApiKey) {
+      setApiKey(savedApiKey);
+      setShowApiKeyInput(false);
+    }
+  }, []);
+
   // Scroll to bottom when messages change
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -48,7 +58,72 @@ export function GeminiAI({
     }
   }, [messages, isTTSEnabled]);
 
-  const handleSendMessage = () => {
+  const askGemini = async (prompt: string) => {
+    if (!apiKey) {
+      toast.error("Please provide your Gemini API key first");
+      setShowApiKeyInput(true);
+      return "I need a valid Gemini API key to provide responses.";
+    }
+
+    try {
+      // Initialize Gemini AI with the API key
+      const genAI = new GoogleGenerativeAI(apiKey);
+      
+      // Get the generative model (using gemini-1.5-flash for faster responses)
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      // Prepare the chat prompt
+      const generationConfig = {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 1024,
+      };
+      
+      // Create specific system prompt based on mode
+      let systemPrompt = "";
+      
+      if (mode === "chat") {
+        systemPrompt = "You are a Gemini Teaching Assistant, specialized in helping teachers with educational questions, " +
+          "subject matter expertise, and classroom management. Give thoughtful, accurate, and helpful responses.";
+      } else if (mode === "generate") {
+        systemPrompt = "You are a Gemini Content Generator, specialized in creating educational content like lesson plans, " +
+          "worksheets, quizzes, and activities. Structure your content clearly with headers and sections.";
+      } else if (mode === "analyze") {
+        systemPrompt = "You are a Gemini Student Work Analyzer, specialized in reviewing student submissions, " +
+          "identifying patterns, misconceptions, and providing constructive feedback for improvement.";
+      }
+        
+      // Create a new chat session
+      const chat = model.startChat({
+        generationConfig,
+        history: [
+          {
+            role: "user",
+            parts: [{ text: "Please introduce yourself based on your role" }],
+          },
+          {
+            role: "model",
+            parts: [{ text: `Hello! I'm your Gemini AI assistant for ${mode === "chat" ? "teaching support" : mode === "generate" ? "content generation" : "student work analysis"}. How can I help you today?` }],
+          },
+          {
+            role: "user",
+            parts: [{ text: systemPrompt }],
+          }
+        ],
+      });
+
+      // Send the user prompt and get response
+      const result = await chat.sendMessage(prompt);
+      const response = result.response.text();
+      return response;
+    } catch (error) {
+      console.error("Error calling Gemini AI:", error);
+      return "I'm having trouble connecting to Gemini AI. Please check your API key or try again later.";
+    }
+  };
+
+  const handleSendMessage = async () => {
     if (!prompt.trim()) return;
     
     // Check if API key is set
@@ -66,18 +141,11 @@ export function GeminiAI({
     
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
+    setPrompt("");
     
-    // In a real implementation, we would call the Gemini API here
-    setTimeout(() => {
-      let response = "";
-      
-      if (mode === "chat") {
-        response = "I'm your AI teaching assistant powered by Gemini. I can help answer questions about your lessons, explain difficult concepts, or suggest teaching strategies.";
-      } else if (mode === "generate") {
-        response = "I've generated a new lesson plan based on your input. This includes learning objectives, activities, and assessment strategies tailored to your specific needs.";
-      } else if (mode === "analyze") {
-        response = "After analyzing the student submissions, I've identified common misconceptions in understanding photosynthesis. Many students struggle with the concept of light-dependent reactions.";
-      }
+    try {
+      // Get response from Gemini AI
+      const response = await askGemini(prompt);
       
       const assistantMessage = {
         content: response,
@@ -86,9 +154,19 @@ export function GeminiAI({
       };
       
       setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error("Error in Gemini request:", error);
+      
+      const errorMessage = {
+        content: "I'm having trouble processing your request. Please check your API key or try again later.",
+        sender: "assistant" as const,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-      setPrompt("");
-    }, 1500);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -104,6 +182,8 @@ export function GeminiAI({
       return;
     }
     
+    // Save API key to local storage
+    localStorage.setItem('geminiApiKey', apiKey);
     setShowApiKeyInput(false);
     toast.success("API key saved successfully");
   };
@@ -165,6 +245,7 @@ export function GeminiAI({
                 onClick={handleSaveApiKey} 
                 className="w-full bg-primary hover:bg-primary/90"
               >
+                <Key className="mr-2 h-4 w-4" />
                 Save API Key
               </Button>
             </div>

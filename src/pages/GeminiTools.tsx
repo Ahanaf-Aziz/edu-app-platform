@@ -6,12 +6,22 @@ import { GeminiAI } from "@/components/ai/GeminiAI";
 import { Bot, FileText, Brain, Sparkles, Book, School, PenLine, UserCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { speakWithGoogleTTS } from "@/utils/googleTTS";
 import { toast } from "sonner";
 
 const GeminiTools = () => {
   const [activeTab, setActiveTab] = useState("chat");
+  
+  useEffect(() => {
+    // Check if API key exists in localStorage
+    const hasApiKey = localStorage.getItem('geminiApiKey') !== null;
+    
+    // If we have saved the API key, show a welcome message
+    if (hasApiKey) {
+      toast.success("Gemini API key detected. Ready to use Gemini AI tools.");
+    }
+  }, []);
   
   const handleTabChange = (value: string) => {
     setActiveTab(value);
@@ -237,7 +247,7 @@ const GeminiTools = () => {
           className="mt-8 text-center text-sm text-muted-foreground"
         >
           <p>
-            Powered by Google's Gemini AI technology. To use these features, you'll need a Gemini API key.
+            Powered by Google's Gemini AI technology. To use these features, you need a Gemini API key.
             <br />
             Get started at <a href="https://ai.google.dev/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Google AI Studio</a>.
           </p>

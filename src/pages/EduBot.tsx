@@ -6,12 +6,14 @@ import { VoiceButton } from "@/components/ui/voice-button";
 import { MessageBubble } from "@/components/ui/message-bubble";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Send, Mic, MessageSquare, VolumeX, Volume2, AlignLeft } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Send, Mic, MessageSquare, VolumeX, Volume2, AlignLeft, Key } from "lucide-react";
 import PageTransition from "@/components/layout/PageTransition";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { speakWithGoogleTTS } from "@/utils/googleTTS";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 interface Message {
   id: string;
@@ -24,7 +26,7 @@ const EduBot = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
-      content: "Hi there! I'm EduBot. Ask me any question or submit an answer for instant feedback.",
+      content: "Hi there! I'm EduBot powered by Google's Gemini AI. Ask me any question for instant answers and educational support.",
       sender: "assistant",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
@@ -33,6 +35,8 @@ const EduBot = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isTTSEnabled, setIsTTSEnabled] = useState(true);
+  const [apiKey, setApiKey] = useState("");
+  const [showApiKeyInput, setShowApiKeyInput] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [currentTab, setCurrentTab] = useState("chat");
   
@@ -57,6 +61,13 @@ const EduBot = () => {
     if (!hasRecognitionSupport) {
       toast.error('Your browser does not support speech recognition. Please try using Chrome or Edge.');
     }
+    
+    // Check for API key in localStorage
+    const savedApiKey = localStorage.getItem('geminiApiKey');
+    if (savedApiKey) {
+      setApiKey(savedApiKey);
+      setShowApiKeyInput(false);
+    }
   }, [hasRecognitionSupport]);
 
   // Scroll to bottom when messages change
@@ -76,10 +87,74 @@ const EduBot = () => {
     }
   }, [messages, isTTSEnabled]);
 
+  const askGemini = async (prompt: string) => {
+    if (!apiKey) {
+      toast.error("Please provide your Gemini API key first");
+      setShowApiKeyInput(true);
+      return "I need a valid Gemini API key to provide responses.";
+    }
+
+    try {
+      // Initialize Gemini AI with the API key
+      const genAI = new GoogleGenerativeAI(apiKey);
+      
+      // Get the generative model
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      // Prepare the chat prompt
+      const generationConfig = {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 1024,
+      };
+      
+      // Create education-focused system prompt
+      const educationPrompt = "You are EduBot, an educational assistant powered by Google's Gemini AI. " +
+        "You specialize in providing educational answers, explanations, and support for students and teachers. " +
+        "Keep answers clear, accurate, and age-appropriate. " +
+        "When possible, structure your responses with clear headings and bullet points for better understanding. " +
+        "If you don't know something, say so rather than making up information.";
+        
+      // Create a new chat session
+      const chat = model.startChat({
+        generationConfig,
+        history: [
+          {
+            role: "user",
+            parts: [{ text: "Please introduce yourself as EduBot" }],
+          },
+          {
+            role: "model",
+            parts: [{ text: "Hello! I'm EduBot, your educational assistant powered by Google's Gemini AI. I'm here to help students and teachers with educational questions, explanations, and support. How can I assist you with your learning today?" }],
+          },
+          {
+            role: "user",
+            parts: [{ text: educationPrompt }],
+          }
+        ],
+      });
+
+      // Send the user prompt and get response
+      const result = await chat.sendMessage(prompt);
+      const response = result.response.text();
+      return response;
+    } catch (error) {
+      console.error("Error calling Gemini AI:", error);
+      return "I'm having trouble connecting to Gemini AI. Please check your API key or try again later.";
+    }
+  };
+
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     
     if (!inputText.trim() && !isListening) return;
+    
+    // Check if API key is set
+    if (!apiKey && showApiKeyInput) {
+      toast.error("Please enter your Gemini API key first");
+      return;
+    }
     
     // Add user message
     const userMessage: Message = {
@@ -93,34 +168,34 @@ const EduBot = () => {
     setInputText("");
     setIsLoading(true);
     
-    // Simulate AI processing time
-    setTimeout(() => {
-      let responseContent = "";
-      
-      // Simple response logic based on input
-      if (inputText.toLowerCase().includes("hello") || inputText.toLowerCase().includes("hi")) {
-        responseContent = "Hello! How can I help with your studies today?";
-      } else if (inputText.toLowerCase().includes("math") || inputText.toLowerCase().includes("equation")) {
-        responseContent = "For math problems, try to break them down step by step. What specific equation or concept are you working with?";
-      } else if (inputText.toLowerCase().includes("feedback")) {
-        responseContent = "I'd be happy to give you feedback! Please share your answer or question, and I'll analyze it for you.";
-      } else if (inputText.toLowerCase().includes("history")) {
-        responseContent = "When studying history, focus on understanding the context and causality of events rather than just memorizing dates. What period are you studying?";
-      } else {
-        responseContent = "Thank you for your input. When answering this type of question, consider addressing the key concepts and providing specific examples to support your points. Also, try to structure your response with a clear introduction and conclusion.";
-      }
+    try {
+      // Get response from Gemini AI
+      const geminiResponse = await askGemini(userMessage.content);
       
       // Add AI response
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: responseContent,
+        content: geminiResponse,
         sender: "assistant",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       
       setMessages((prev) => [...prev, botMessage]);
+    } catch (error) {
+      console.error("Error in chat submission:", error);
+      
+      // Add error message
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: "I'm having trouble processing your request. Please try again later.",
+        sender: "assistant",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const handleVoiceStart = () => {
@@ -150,6 +225,25 @@ const EduBot = () => {
     }
   };
 
+  const handleSaveApiKey = () => {
+    if (!apiKey.trim()) {
+      toast.error("Please enter a valid API key");
+      return;
+    }
+    
+    // Save API key to local storage
+    localStorage.setItem('geminiApiKey', apiKey);
+    setShowApiKeyInput(false);
+    toast.success("API key saved successfully");
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
   return (
     <PageTransition>
       <div className="max-w-4xl mx-auto">
@@ -161,7 +255,7 @@ const EduBot = () => {
         >
           <h1 className="text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">EduBot</h1>
           <p className="text-muted-foreground max-w-lg mx-auto">
-            Get instant feedback on your answers and questions using voice or text with enhanced accuracy powered by Google's speech technology
+            Get instant AI-powered answers to your educational questions using voice or text with Gemini AI technology
           </p>
         </motion.div>
 
@@ -189,99 +283,127 @@ const EduBot = () => {
               </Button>
             </div>
             
-            <TabsContent value="chat" className="p-0">
-              <div className="h-[500px] flex flex-col">
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  {messages.map((message) => (
-                    <MessageBubble
-                      key={message.id}
-                      content={message.content}
-                      sender={message.sender}
-                      timestamp={message.timestamp}
-                    />
-                  ))}
-                  {isLoading && (
-                    <MessageBubble
-                      content=""
-                      sender="assistant"
-                      isLoading={true}
-                    />
-                  )}
-                  <div ref={messagesEndRef} />
+            {showApiKeyInput ? (
+              <div className="p-6 space-y-4">
+                <div className="text-sm bg-primary/5 p-4 rounded-lg border border-primary/10">
+                  <p className="font-medium text-primary mb-2">🔑 API Key Required</p>
+                  <p>To use Gemini AI features, you need to provide your Google Gemini API key. This key will be stored locally in your browser.</p>
                 </div>
-                
-                <form 
-                  onSubmit={handleSubmit}
-                  className="border-t p-4 bg-background/50 backdrop-blur-sm"
-                >
-                  <div className="flex space-x-2">
-                    <Textarea
-                      value={inputText}
-                      onChange={(e) => setInputText(e.target.value)}
-                      placeholder="Type your question or answer here..."
-                      className="resize-none min-h-[80px] bg-background/70 backdrop-blur-sm"
-                      maxLength={500}
-                    />
-                    <Button 
-                      type="submit" 
-                      className="shrink-0 h-[80px] w-[50px] bg-primary hover:bg-primary/90"
-                      disabled={!inputText.trim() || isLoading}
-                    >
-                      <Send className="h-5 w-5" />
-                    </Button>
-                  </div>
-                </form>
+                <div className="space-y-2">
+                  <Input
+                    type="password"
+                    placeholder="Enter your Gemini API key"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    className="bg-background/70"
+                  />
+                  <Button 
+                    onClick={handleSaveApiKey} 
+                    className="w-full bg-primary hover:bg-primary/90"
+                  >
+                    <Key className="mr-2 h-4 w-4" />
+                    Save API Key
+                  </Button>
+                </div>
               </div>
-            </TabsContent>
-            
-            <TabsContent value="voice" className="p-0">
-              <div className="h-[500px] flex flex-col">
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  {messages.map((message) => (
-                    <MessageBubble
-                      key={message.id}
-                      content={message.content}
-                      sender={message.sender}
-                      timestamp={message.timestamp}
-                    />
-                  ))}
-                  {isLoading && (
-                    <MessageBubble
-                      content=""
-                      sender="assistant"
-                      isLoading={true}
-                    />
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
+            ) : (
+              <>
+                <TabsContent value="chat" className="p-0">
+                  <div className="h-[500px] flex flex-col">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                      {messages.map((message) => (
+                        <MessageBubble
+                          key={message.id}
+                          content={message.content}
+                          sender={message.sender}
+                          timestamp={message.timestamp}
+                        />
+                      ))}
+                      {isLoading && (
+                        <MessageBubble
+                          content=""
+                          sender="assistant"
+                          isLoading={true}
+                        />
+                      )}
+                      <div ref={messagesEndRef} />
+                    </div>
+                    
+                    <form 
+                      onSubmit={handleSubmit}
+                      className="border-t p-4 bg-background/50 backdrop-blur-sm"
+                    >
+                      <div className="flex space-x-2">
+                        <Textarea
+                          value={inputText}
+                          onChange={(e) => setInputText(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          placeholder="Ask your educational questions..."
+                          className="resize-none min-h-[80px] bg-background/70 backdrop-blur-sm"
+                          maxLength={500}
+                        />
+                        <Button 
+                          type="submit" 
+                          className="shrink-0 h-[80px] w-[50px] bg-primary hover:bg-primary/90"
+                          disabled={!inputText.trim() || isLoading}
+                        >
+                          <Send className="h-5 w-5" />
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+                </TabsContent>
                 
-                {isListening && (
-                  <div className="px-4 py-3 bg-primary/10 border-t border-primary/20 text-center">
-                    <p className="font-medium text-primary">{transcript || "Listening..."}</p>
-                    <div className="flex justify-center mt-2 space-x-1">
-                      <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse"></span>
-                      <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse delay-150"></span>
-                      <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse delay-300"></span>
+                <TabsContent value="voice" className="p-0">
+                  <div className="h-[500px] flex flex-col">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                      {messages.map((message) => (
+                        <MessageBubble
+                          key={message.id}
+                          content={message.content}
+                          sender={message.sender}
+                          timestamp={message.timestamp}
+                        />
+                      ))}
+                      {isLoading && (
+                        <MessageBubble
+                          content=""
+                          sender="assistant"
+                          isLoading={true}
+                        />
+                      )}
+                      <div ref={messagesEndRef} />
+                    </div>
+                    
+                    {isListening && (
+                      <div className="px-4 py-3 bg-primary/10 border-t border-primary/20 text-center">
+                        <p className="font-medium text-primary">{transcript || "Listening..."}</p>
+                        <div className="flex justify-center mt-2 space-x-1">
+                          <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+                          <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse delay-150"></span>
+                          <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse delay-300"></span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="border-t p-6 bg-background/50 backdrop-blur-sm flex flex-col items-center">
+                      <VoiceButton
+                        onStart={handleVoiceStart}
+                        onStop={handleVoiceStop}
+                        isListening={isListening}
+                        isProcessing={isProcessing}
+                        className="mb-3"
+                      />
+                      <p className="text-sm text-muted-foreground mt-2">
+                        {hasRecognitionSupport 
+                          ? "Ask your question by voice for instant Gemini AI answers" 
+                          : "Speech recognition not supported in your browser"}
+                      </p>
                     </div>
                   </div>
-                )}
-                
-                <div className="border-t p-6 bg-background/50 backdrop-blur-sm flex flex-col items-center">
-                  <VoiceButton
-                    onStart={handleVoiceStart}
-                    onStop={handleVoiceStop}
-                    isListening={isListening}
-                    isProcessing={isProcessing}
-                    className="mb-3"
-                  />
-                  <p className="text-sm text-muted-foreground mt-2">
-                    {hasRecognitionSupport 
-                      ? "Speak clearly for better recognition" 
-                      : "Speech recognition not supported in your browser"}
-                  </p>
-                </div>
-              </div>
-            </TabsContent>
+                </TabsContent>
+              </>
+            )}
           </Tabs>
         </Card>
         
@@ -292,18 +414,18 @@ const EduBot = () => {
           className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4"
         >
           <Card className="bg-card/80 backdrop-blur-sm p-4 shadow-subtle hover:shadow-md transition-shadow">
-            <h3 className="font-semibold text-primary mb-2">Enhanced Recognition</h3>
-            <p className="text-sm text-muted-foreground">Powered by Google's speech technology for more accurate voice recognition and responses.</p>
+            <h3 className="font-semibold text-primary mb-2">Gemini AI Powered</h3>
+            <p className="text-sm text-muted-foreground">Get accurate and educational answers powered by Google's advanced Gemini AI technology.</p>
           </Card>
           
           <Card className="bg-card/80 backdrop-blur-sm p-4 shadow-subtle hover:shadow-md transition-shadow">
-            <h3 className="font-semibold text-primary mb-2">Real-time Feedback</h3>
-            <p className="text-sm text-muted-foreground">Get instant analysis and suggestions on your answers to improve learning outcomes.</p>
+            <h3 className="font-semibold text-primary mb-2">Voice Interaction</h3>
+            <p className="text-sm text-muted-foreground">Speak your questions naturally and get spoken responses for an interactive learning experience.</p>
           </Card>
           
           <Card className="bg-card/80 backdrop-blur-sm p-4 shadow-subtle hover:shadow-md transition-shadow">
-            <h3 className="font-semibold text-primary mb-2">Accessibility Features</h3>
-            <p className="text-sm text-muted-foreground">Text-to-speech makes content accessible for all students, supporting diverse learning needs.</p>
+            <h3 className="font-semibold text-primary mb-2">Educational Focus</h3>
+            <p className="text-sm text-muted-foreground">Designed specifically for students and teachers with educational content prioritized in responses.</p>
           </Card>
         </motion.div>
       </div>
