@@ -1,6 +1,6 @@
 
 import { motion } from "framer-motion";
-import { Mic, Users, Calendar } from "lucide-react";
+import { Mic, Users, Calendar, Bot } from "lucide-react";
 import { FeatureCard } from "@/components/ui/feature-card";
 import PageTransition from "@/components/layout/PageTransition";
 
@@ -22,6 +22,12 @@ const features = [
     description: "Generate structured lesson plans with AI using voice input and smart scheduling.",
     icon: <Calendar className="h-6 w-6" />,
     href: "/teachsmart",
+  },
+  {
+    title: "Gemini Tools",
+    description: "Leverage Google's Gemini AI to create content, analyze student work, and get teaching assistance.",
+    icon: <Bot className="h-6 w-6" />,
+    href: "/geminitools",
   },
 ];
 
@@ -49,7 +55,7 @@ const Index = () => {
         </section>
 
         <section className="w-full max-w-6xl mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {features.map((feature, index) => (
               <FeatureCard
                 key={feature.title}

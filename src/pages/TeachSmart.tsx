@@ -21,9 +21,12 @@ import {
   Calendar as CalendarIcon,
   ListChecks,
   Bookmark,
+  School,
 } from "lucide-react";
 import PageTransition from "@/components/layout/PageTransition";
 import { toast } from "sonner";
+import { GoogleClassroom } from "@/components/integrations/GoogleClassroom";
+import { GeminiAI } from "@/components/ai/GeminiAI";
 
 // Sample data
 const plannedLessons = [
@@ -56,6 +59,9 @@ const TeachSmart = () => {
   const [lessonSubject, setLessonSubject] = useState("science");
   const [lessonGrade, setLessonGrade] = useState("9th");
   const [lessonDuration, setLessonDuration] = useState("45");
+  const [isConnectedToClassroom, setIsConnectedToClassroom] = useState(false);
+  const [classroomAuthToken, setClassroomAuthToken] = useState("");
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
 
   const startListening = () => {
     setIsListening(true);
@@ -89,16 +95,34 @@ const TeachSmart = () => {
   };
 
   const saveLessonPlan = () => {
-    toast.success("Lesson plan saved! Would you like to integrate with Google Classroom?", {
-      action: {
-        label: "Connect",
-        onClick: () => toast.info("Google Classroom integration will be available soon"),
-      },
-    });
+    if (isConnectedToClassroom) {
+      toast.success("Lesson plan saved and published to Google Classroom!");
+    } else {
+      toast.success("Lesson plan saved! Would you like to integrate with Google Classroom?", {
+        action: {
+          label: "Connect",
+          onClick: () => setActiveTab("integrations"),
+        },
+      });
+    }
     
     setLessonGoal("");
     setPlanGenerated(false);
     setActiveTab("planned");
+  };
+
+  const handleClassroomAuth = (token: string) => {
+    setClassroomAuthToken(token);
+    setIsConnectedToClassroom(true);
+  };
+
+  const handleClassroomImport = (courses: any[]) => {
+    // Would update state with imported courses
+    console.log("Imported courses:", courses);
+  };
+
+  const toggleAIAssistant = () => {
+    setShowAIAssistant(!showAIAssistant);
   };
 
   return (
@@ -125,7 +149,7 @@ const TeachSmart = () => {
           </CardHeader>
           <CardContent>
             <Tabs defaultValue={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsList className="grid w-full grid-cols-3 mb-6">
                 <TabsTrigger value="create">
                   <FileText className="mr-2 h-4 w-4" />
                   Create New
@@ -134,12 +158,26 @@ const TeachSmart = () => {
                   <Calendar className="mr-2 h-4 w-4" />
                   Planned Lessons
                 </TabsTrigger>
+                <TabsTrigger value="integrations">
+                  <School className="mr-2 h-4 w-4" />
+                  Integrations
+                </TabsTrigger>
               </TabsList>
               
               <TabsContent value="create" className="space-y-6">
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="lessonGoal">Lesson Goals</Label>
+                    <div className="flex justify-between items-center">
+                      <Label htmlFor="lessonGoal">Lesson Goals</Label>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={toggleAIAssistant}
+                      >
+                        <Lightbulb className="mr-2 h-4 w-4" />
+                        AI Assistant
+                      </Button>
+                    </div>
                     <div className="flex space-x-2">
                       <Textarea
                         id="lessonGoal"
@@ -222,6 +260,24 @@ const TeachSmart = () => {
                   </Button>
                 </div>
                 
+                {showAIAssistant && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="border rounded-lg overflow-hidden"
+                  >
+                    <div className="h-[350px]">
+                      <GeminiAI 
+                        mode="generate"
+                        title="Lesson Planning Assistant"
+                        description="Get help crafting effective lesson goals and objectives"
+                        placeholder="Ask for suggestions on your lesson plan..."
+                      />
+                    </div>
+                  </motion.div>
+                )}
+                
                 {planGenerated && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
@@ -301,7 +357,7 @@ const TeachSmart = () => {
                       <div className="flex space-x-2">
                         <Button onClick={saveLessonPlan} className="flex-1">
                           <CheckCircle2 className="mr-2 h-4 w-4" />
-                          Save Lesson Plan
+                          {isConnectedToClassroom ? "Save & Publish to Classroom" : "Save Lesson Plan"}
                         </Button>
                         <Button variant="outline" onClick={() => setPlanGenerated(false)} className="flex-1">
                           Edit
@@ -331,6 +387,12 @@ const TeachSmart = () => {
                           >
                             {lesson.status}
                           </Badge>
+                          {isConnectedToClassroom && (
+                            <Badge variant="outline" className="ml-2">
+                              <School className="h-3 w-3 mr-1" />
+                              Classroom
+                            </Badge>
+                          )}
                         </div>
                         <div className="text-sm text-muted-foreground mt-1 space-y-1">
                           <div className="flex items-center">
@@ -358,6 +420,13 @@ const TeachSmart = () => {
                     </div>
                   </motion.div>
                 ))}
+              </TabsContent>
+              
+              <TabsContent value="integrations" className="space-y-4">
+                <GoogleClassroom 
+                  onAuthSuccess={handleClassroomAuth}
+                  onImport={handleClassroomImport}
+                />
               </TabsContent>
             </Tabs>
           </CardContent>

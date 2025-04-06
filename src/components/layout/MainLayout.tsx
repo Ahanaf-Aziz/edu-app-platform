@@ -3,7 +3,7 @@ import { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { Mic, Users, Calendar, Home } from "lucide-react";
+import { Mic, Users, Calendar, Home, Bot, School } from "lucide-react";
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -17,6 +17,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     { path: "/edubot", label: "EduBot", icon: Mic },
     { path: "/edupeerx", label: "EduPeerX", icon: Users },
     { path: "/teachsmart", label: "TeachSmart", icon: Calendar },
+    { path: "/geminitools", label: "Gemini Tools", icon: Bot },
   ];
 
   return (

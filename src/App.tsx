@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import EduBot from "./pages/EduBot";
 import EduPeerX from "./pages/EduPeerX";
 import TeachSmart from "./pages/TeachSmart";
+import GeminiTools from "./pages/GeminiTools";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +26,7 @@ const AnimatedRoutes = () => {
         <Route path="/edubot" element={<EduBot />} />
         <Route path="/edupeerx" element={<EduPeerX />} />
         <Route path="/teachsmart" element={<TeachSmart />} />
+        <Route path="/geminitools" element={<GeminiTools />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AnimatePresence>
