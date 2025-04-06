@@ -6,11 +6,12 @@ import { VoiceButton } from "@/components/ui/voice-button";
 import { MessageBubble } from "@/components/ui/message-bubble";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Send, Mic, MessageSquare } from "lucide-react";
+import { Send, Mic, MessageSquare, VolumeX, Volume2, AlignLeft } from "lucide-react";
 import PageTransition from "@/components/layout/PageTransition";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { speakWithGoogleTTS } from "@/utils/googleTTS";
 
 interface Message {
   id: string;
@@ -31,6 +32,9 @@ const EduBot = () => {
   const [inputText, setInputText] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isTTSEnabled, setIsTTSEnabled] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [currentTab, setCurrentTab] = useState("chat");
   
   // Use our custom speech recognition hook
   const {
@@ -54,6 +58,23 @@ const EduBot = () => {
       toast.error('Your browser does not support speech recognition. Please try using Chrome or Edge.');
     }
   }, [hasRecognitionSupport]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+    
+    // Speak the last assistant message if TTS is enabled
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.sender === "assistant" && isTTSEnabled) {
+      speakWithGoogleTTS({
+        text: lastMessage.content,
+        voice: 'neutral',
+        language: 'en-US'
+      });
+    }
+  }, [messages, isTTSEnabled]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -119,6 +140,16 @@ const EduBot = () => {
     }, 500);
   };
 
+  const toggleTTS = () => {
+    setIsTTSEnabled(prev => !prev);
+    toast.success(`Text-to-speech ${!isTTSEnabled ? 'enabled' : 'disabled'}`);
+    
+    // Stop any ongoing speech when disabling
+    if (isTTSEnabled) {
+      window.speechSynthesis.cancel();
+    }
+  };
+
   return (
     <PageTransition>
       <div className="max-w-4xl mx-auto">
@@ -128,24 +159,35 @@ const EduBot = () => {
           transition={{ duration: 0.5 }}
           className="mb-8 text-center"
         >
-          <h1 className="text-3xl font-bold mb-3">EduBot</h1>
-          <p className="text-muted-foreground">
-            Get instant feedback on your answers and questions using voice or text
+          <h1 className="text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">EduBot</h1>
+          <p className="text-muted-foreground max-w-lg mx-auto">
+            Get instant feedback on your answers and questions using voice or text with enhanced accuracy powered by Google's speech technology
           </p>
         </motion.div>
 
-        <Card className="border shadow-subtle bg-card/50 backdrop-blur-sm overflow-hidden">
-          <Tabs defaultValue="chat" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 rounded-none border-b bg-background/50 backdrop-blur-sm">
-              <TabsTrigger value="chat" className="data-[state=active]:bg-background">
+        <Card className="border shadow-lg bg-card/80 backdrop-blur-sm overflow-hidden rounded-xl">
+          <Tabs defaultValue="chat" className="w-full" onValueChange={setCurrentTab}>
+            <TabsList className="grid w-full grid-cols-2 rounded-none border-b bg-card/50 backdrop-blur-sm">
+              <TabsTrigger value="chat" className="data-[state=active]:bg-background/80 transition-all duration-200">
                 <MessageSquare className="h-4 w-4 mr-2" />
                 <span>Chat</span>
               </TabsTrigger>
-              <TabsTrigger value="voice" className="data-[state=active]:bg-background">
+              <TabsTrigger value="voice" className="data-[state=active]:bg-background/80 transition-all duration-200">
                 <Mic className="h-4 w-4 mr-2" />
                 <span>Voice</span>
               </TabsTrigger>
             </TabsList>
+            
+            <div className="absolute right-4 top-2 z-10">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleTTS}
+                title={isTTSEnabled ? "Disable text-to-speech" : "Enable text-to-speech"}
+              >
+                {isTTSEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              </Button>
+            </div>
             
             <TabsContent value="chat" className="p-0">
               <div className="h-[500px] flex flex-col">
@@ -165,6 +207,7 @@ const EduBot = () => {
                       isLoading={true}
                     />
                   )}
+                  <div ref={messagesEndRef} />
                 </div>
                 
                 <form 
@@ -176,11 +219,15 @@ const EduBot = () => {
                       value={inputText}
                       onChange={(e) => setInputText(e.target.value)}
                       placeholder="Type your question or answer here..."
-                      className="resize-none"
+                      className="resize-none min-h-[80px] bg-background/70 backdrop-blur-sm"
                       maxLength={500}
                     />
-                    <Button type="submit" className="shrink-0">
-                      <Send className="h-4 w-4" />
+                    <Button 
+                      type="submit" 
+                      className="shrink-0 h-[80px] w-[50px] bg-primary hover:bg-primary/90"
+                      disabled={!inputText.trim() || isLoading}
+                    >
+                      <Send className="h-5 w-5" />
                     </Button>
                   </div>
                 </form>
@@ -205,26 +252,60 @@ const EduBot = () => {
                       isLoading={true}
                     />
                   )}
+                  <div ref={messagesEndRef} />
                 </div>
                 
                 {isListening && (
-                  <div className="px-4 py-2 bg-primary/10 border-t border-primary/20 text-center text-sm">
-                    <p>{transcript || "Listening..."}</p>
+                  <div className="px-4 py-3 bg-primary/10 border-t border-primary/20 text-center">
+                    <p className="font-medium text-primary">{transcript || "Listening..."}</p>
+                    <div className="flex justify-center mt-2 space-x-1">
+                      <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+                      <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse delay-150"></span>
+                      <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse delay-300"></span>
+                    </div>
                   </div>
                 )}
                 
-                <div className="border-t p-6 bg-background/50 backdrop-blur-sm flex justify-center">
+                <div className="border-t p-6 bg-background/50 backdrop-blur-sm flex flex-col items-center">
                   <VoiceButton
                     onStart={handleVoiceStart}
                     onStop={handleVoiceStop}
                     isListening={isListening}
                     isProcessing={isProcessing}
+                    className="mb-3"
                   />
+                  <p className="text-sm text-muted-foreground mt-2">
+                    {hasRecognitionSupport 
+                      ? "Speak clearly for better recognition" 
+                      : "Speech recognition not supported in your browser"}
+                  </p>
                 </div>
               </div>
             </TabsContent>
           </Tabs>
         </Card>
+        
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5, duration: 0.5 }}
+          className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4"
+        >
+          <Card className="bg-card/80 backdrop-blur-sm p-4 shadow-subtle hover:shadow-md transition-shadow">
+            <h3 className="font-semibold text-primary mb-2">Enhanced Recognition</h3>
+            <p className="text-sm text-muted-foreground">Powered by Google's speech technology for more accurate voice recognition and responses.</p>
+          </Card>
+          
+          <Card className="bg-card/80 backdrop-blur-sm p-4 shadow-subtle hover:shadow-md transition-shadow">
+            <h3 className="font-semibold text-primary mb-2">Real-time Feedback</h3>
+            <p className="text-sm text-muted-foreground">Get instant analysis and suggestions on your answers to improve learning outcomes.</p>
+          </Card>
+          
+          <Card className="bg-card/80 backdrop-blur-sm p-4 shadow-subtle hover:shadow-md transition-shadow">
+            <h3 className="font-semibold text-primary mb-2">Accessibility Features</h3>
+            <p className="text-sm text-muted-foreground">Text-to-speech makes content accessible for all students, supporting diverse learning needs.</p>
+          </Card>
+        </motion.div>
       </div>
     </PageTransition>
   );

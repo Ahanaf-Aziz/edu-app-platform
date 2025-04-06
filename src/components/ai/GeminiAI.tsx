@@ -1,12 +1,14 @@
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageBubble } from "@/components/ui/message-bubble";
 import { Input } from "@/components/ui/input";
-import { Bot, Send, Lightbulb, Brain, FileText } from "lucide-react";
+import { Bot, Send, Lightbulb, Brain, FileText, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
+import { speakWithGoogleTTS } from "@/utils/googleTTS";
+import { motion } from "framer-motion";
 
 interface GeminiAIProps {
   mode?: "chat" | "generate" | "analyze";
@@ -26,6 +28,25 @@ export function GeminiAI({
   const [messages, setMessages] = useState<Array<{content: string, sender: "user" | "assistant", timestamp: string}>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showApiKeyInput, setShowApiKeyInput] = useState(true);
+  const [isTTSEnabled, setIsTTSEnabled] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+    
+    // Speak the last assistant message if TTS is enabled
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.sender === "assistant" && isTTSEnabled) {
+      speakWithGoogleTTS({
+        text: lastMessage.content,
+        voice: 'neutral',
+        language: 'en-US'
+      });
+    }
+  }, [messages, isTTSEnabled]);
 
   const handleSendMessage = () => {
     if (!prompt.trim()) return;
@@ -40,7 +61,7 @@ export function GeminiAI({
     const userMessage = {
       content: prompt,
       sender: "user" as const,
-      timestamp: new Date().toLocaleTimeString()
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
     
     setMessages(prev => [...prev, userMessage]);
@@ -61,7 +82,7 @@ export function GeminiAI({
       const assistantMessage = {
         content: response,
         sender: "assistant" as const,
-        timestamp: new Date().toLocaleTimeString()
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -87,21 +108,49 @@ export function GeminiAI({
     toast.success("API key saved successfully");
   };
 
+  const toggleTTS = () => {
+    setIsTTSEnabled(prev => !prev);
+    toast.success(`Text-to-speech ${!isTTSEnabled ? 'enabled' : 'disabled'}`);
+    
+    // Stop any ongoing speech when disabling
+    if (isTTSEnabled) {
+      window.speechSynthesis.cancel();
+    }
+  };
+
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader className="space-y-1 pb-2">
-        <div className="flex items-center space-x-2">
-          {mode === "chat" && <Bot className="h-5 w-5 text-primary" />}
-          {mode === "generate" && <Lightbulb className="h-5 w-5 text-primary" />}
-          {mode === "analyze" && <Brain className="h-5 w-5 text-primary" />}
-          <CardTitle>{title}</CardTitle>
+    <Card className="h-full flex flex-col shadow-lg bg-card/80 backdrop-blur-sm border rounded-xl overflow-hidden">
+      <CardHeader className="space-y-1 pb-2 border-b bg-background/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            {mode === "chat" && <Bot className="h-5 w-5 text-primary" />}
+            {mode === "generate" && <Lightbulb className="h-5 w-5 text-primary" />}
+            {mode === "analyze" && <Brain className="h-5 w-5 text-primary" />}
+            <CardTitle className="bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">{title}</CardTitle>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTTS}
+            title={isTTSEnabled ? "Disable text-to-speech" : "Enable text-to-speech"}
+            className="h-8 w-8"
+          >
+            {isTTSEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+          </Button>
         </div>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
+      
       <CardContent className="flex-1 flex flex-col p-4 space-y-4 overflow-hidden">
         {showApiKeyInput ? (
-          <div className="space-y-4">
-            <div className="text-sm">
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-4"
+          >
+            <div className="text-sm bg-primary/5 p-4 rounded-lg border border-primary/10">
+              <p className="font-medium text-primary mb-2">🔑 API Key Required</p>
               <p>To use Gemini AI features, you need to provide your Google Gemini API key. This key will be stored locally in your browser.</p>
             </div>
             <div className="space-y-2">
@@ -110,15 +159,16 @@ export function GeminiAI({
                 placeholder="Enter your Gemini API key"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
+                className="bg-background/70"
               />
               <Button 
                 onClick={handleSaveApiKey} 
-                className="w-full"
+                className="w-full bg-primary hover:bg-primary/90"
               >
                 Save API Key
               </Button>
             </div>
-          </div>
+          </motion.div>
         ) : (
           <>
             <div className="flex-1 overflow-y-auto space-y-2 min-h-[200px]">
@@ -169,6 +219,7 @@ export function GeminiAI({
                   isLoading={true}
                 />
               )}
+              <div ref={messagesEndRef} />
             </div>
 
             <div className="pt-2 border-t">
@@ -178,13 +229,13 @@ export function GeminiAI({
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  className="flex-1 min-h-[60px] resize-none"
+                  className="flex-1 min-h-[80px] resize-none bg-background/70 backdrop-blur-sm"
                 />
                 <Button 
                   size="icon"
                   disabled={isLoading || !prompt.trim()} 
                   onClick={handleSendMessage}
-                  className="h-[60px] w-[60px] shrink-0"
+                  className="h-[80px] w-[50px] bg-primary hover:bg-primary/90"
                 >
                   <Send className="h-5 w-5" />
                 </Button>
