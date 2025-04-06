@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageBubble } from "@/components/ui/message-bubble";
 import { Input } from "@/components/ui/input";
-import { Bot, Send, Lightbulb, Brain, FileText, Volume2, VolumeX, Key } from "lucide-react";
+import { Bot, Send, Lightbulb, Brain, FileText, Volume2, VolumeX, Info } from "lucide-react";
 import { toast } from "sonner";
 import { speakWithGoogleTTS } from "@/utils/googleTTS";
 import { motion } from "framer-motion";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { askGeminiSecure } from "@/utils/apiService";
 
 interface GeminiAIProps {
   mode?: "chat" | "generate" | "analyze";
@@ -25,21 +25,11 @@ export function GeminiAI({
   description = "Powered by Google's Gemini AI model"
 }: GeminiAIProps) {
   const [prompt, setPrompt] = useState("");
-  const [apiKey, setApiKey] = useState("");
   const [messages, setMessages] = useState<Array<{content: string, sender: "user" | "assistant", timestamp: string}>>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [showApiKeyInput, setShowApiKeyInput] = useState(true);
   const [isTTSEnabled, setIsTTSEnabled] = useState(true);
+  const [isBackendAvailable, setIsBackendAvailable] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Check for API key on mount
-  useEffect(() => {
-    const savedApiKey = localStorage.getItem('geminiApiKey');
-    if (savedApiKey) {
-      setApiKey(savedApiKey);
-      setShowApiKeyInput(false);
-    }
-  }, []);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -58,79 +48,8 @@ export function GeminiAI({
     }
   }, [messages, isTTSEnabled]);
 
-  const askGemini = async (prompt: string) => {
-    if (!apiKey) {
-      toast.error("Please provide your Gemini API key first");
-      setShowApiKeyInput(true);
-      return "I need a valid Gemini API key to provide responses.";
-    }
-
-    try {
-      // Initialize Gemini AI with the API key
-      const genAI = new GoogleGenerativeAI(apiKey);
-      
-      // Get the generative model (using gemini-1.5-flash for faster responses)
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      
-      // Prepare the chat prompt
-      const generationConfig = {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 1024,
-      };
-      
-      // Create specific system prompt based on mode
-      let systemPrompt = "";
-      
-      if (mode === "chat") {
-        systemPrompt = "You are a Gemini Teaching Assistant, specialized in helping teachers with educational questions, " +
-          "subject matter expertise, and classroom management. Give thoughtful, accurate, and helpful responses.";
-      } else if (mode === "generate") {
-        systemPrompt = "You are a Gemini Content Generator, specialized in creating educational content like lesson plans, " +
-          "worksheets, quizzes, and activities. Structure your content clearly with headers and sections.";
-      } else if (mode === "analyze") {
-        systemPrompt = "You are a Gemini Student Work Analyzer, specialized in reviewing student submissions, " +
-          "identifying patterns, misconceptions, and providing constructive feedback for improvement.";
-      }
-        
-      // Create a new chat session
-      const chat = model.startChat({
-        generationConfig,
-        history: [
-          {
-            role: "user",
-            parts: [{ text: "Please introduce yourself based on your role" }],
-          },
-          {
-            role: "model",
-            parts: [{ text: `Hello! I'm your Gemini AI assistant for ${mode === "chat" ? "teaching support" : mode === "generate" ? "content generation" : "student work analysis"}. How can I help you today?` }],
-          },
-          {
-            role: "user",
-            parts: [{ text: systemPrompt }],
-          }
-        ],
-      });
-
-      // Send the user prompt and get response
-      const result = await chat.sendMessage(prompt);
-      const response = result.response.text();
-      return response;
-    } catch (error) {
-      console.error("Error calling Gemini AI:", error);
-      return "I'm having trouble connecting to Gemini AI. Please check your API key or try again later.";
-    }
-  };
-
   const handleSendMessage = async () => {
     if (!prompt.trim()) return;
-    
-    // Check if API key is set
-    if (!apiKey && showApiKeyInput) {
-      toast.error("Please enter your Gemini API key first");
-      return;
-    }
     
     // Add user message
     const userMessage = {
@@ -144,8 +63,22 @@ export function GeminiAI({
     setPrompt("");
     
     try {
-      // Get response from Gemini AI
-      const response = await askGemini(prompt);
+      // Create system prompt based on mode
+      let systemPrompt = "";
+      
+      if (mode === "chat") {
+        systemPrompt = "You are a Gemini Teaching Assistant, specialized in helping teachers with educational questions, " +
+          "subject matter expertise, and classroom management. Give thoughtful, accurate, and helpful responses.";
+      } else if (mode === "generate") {
+        systemPrompt = "You are a Gemini Content Generator, specialized in creating educational content like lesson plans, " +
+          "worksheets, quizzes, and activities. Structure your content clearly with headers and sections.";
+      } else if (mode === "analyze") {
+        systemPrompt = "You are a Gemini Student Work Analyzer, specialized in reviewing student submissions, " +
+          "identifying patterns, misconceptions, and providing constructive feedback for improvement.";
+      }
+      
+      // Get response from secure backend API
+      const response = await askGeminiSecure(prompt, mode, systemPrompt);
       
       const assistantMessage = {
         content: response,
@@ -158,12 +91,13 @@ export function GeminiAI({
       console.error("Error in Gemini request:", error);
       
       const errorMessage = {
-        content: "I'm having trouble processing your request. Please check your API key or try again later.",
+        content: "I'm having trouble processing your request. Our system might be experiencing issues.",
         sender: "assistant" as const,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       
       setMessages(prev => [...prev, errorMessage]);
+      setIsBackendAvailable(false);
     } finally {
       setIsLoading(false);
     }
@@ -174,18 +108,6 @@ export function GeminiAI({
       e.preventDefault();
       handleSendMessage();
     }
-  };
-
-  const handleSaveApiKey = () => {
-    if (!apiKey.trim()) {
-      toast.error("Please enter a valid API key");
-      return;
-    }
-    
-    // Save API key to local storage
-    localStorage.setItem('geminiApiKey', apiKey);
-    setShowApiKeyInput(false);
-    toast.success("API key saved successfully");
   };
 
   const toggleTTS = () => {
@@ -222,33 +144,25 @@ export function GeminiAI({
       </CardHeader>
       
       <CardContent className="flex-1 flex flex-col p-4 space-y-4 overflow-hidden">
-        {showApiKeyInput ? (
+        {!isBackendAvailable ? (
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
             className="space-y-4"
           >
-            <div className="text-sm bg-primary/5 p-4 rounded-lg border border-primary/10">
-              <p className="font-medium text-primary mb-2">🔑 API Key Required</p>
-              <p>To use Gemini AI features, you need to provide your Google Gemini API key. This key will be stored locally in your browser.</p>
+            <div className="text-sm bg-yellow-500/10 p-4 rounded-lg border border-yellow-500/20">
+              <p className="font-medium text-yellow-600 mb-2">⚠️ Backend Connection Issue</p>
+              <p>We're having trouble connecting to our AI backend services. The AI functionality may be limited until this is resolved.</p>
             </div>
-            <div className="space-y-2">
-              <Input
-                type="password"
-                placeholder="Enter your Gemini API key"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                className="bg-background/70"
-              />
-              <Button 
-                onClick={handleSaveApiKey} 
-                className="w-full bg-primary hover:bg-primary/90"
-              >
-                <Key className="mr-2 h-4 w-4" />
-                Save API Key
-              </Button>
-            </div>
+            <Button 
+              onClick={() => setIsBackendAvailable(true)} 
+              variant="outline"
+              className="w-full"
+            >
+              <Info className="mr-2 h-4 w-4" />
+              Try Again
+            </Button>
           </motion.div>
         ) : (
           <>

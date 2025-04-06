@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -6,14 +5,13 @@ import { VoiceButton } from "@/components/ui/voice-button";
 import { MessageBubble } from "@/components/ui/message-bubble";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { Send, Mic, MessageSquare, VolumeX, Volume2, AlignLeft, Key } from "lucide-react";
+import { Send, Mic, MessageSquare, VolumeX, Volume2, Info } from "lucide-react";
 import PageTransition from "@/components/layout/PageTransition";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { speakWithGoogleTTS } from "@/utils/googleTTS";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { askGeminiSecure } from "@/utils/apiService";
 
 interface Message {
   id: string;
@@ -35,8 +33,7 @@ const EduBot = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isTTSEnabled, setIsTTSEnabled] = useState(true);
-  const [apiKey, setApiKey] = useState("");
-  const [showApiKeyInput, setShowApiKeyInput] = useState(true);
+  const [isBackendAvailable, setIsBackendAvailable] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [currentTab, setCurrentTab] = useState("chat");
   
@@ -61,13 +58,6 @@ const EduBot = () => {
     if (!hasRecognitionSupport) {
       toast.error('Your browser does not support speech recognition. Please try using Chrome or Edge.');
     }
-    
-    // Check for API key in localStorage
-    const savedApiKey = localStorage.getItem('geminiApiKey');
-    if (savedApiKey) {
-      setApiKey(savedApiKey);
-      setShowApiKeyInput(false);
-    }
   }, [hasRecognitionSupport]);
 
   // Scroll to bottom when messages change
@@ -87,74 +77,10 @@ const EduBot = () => {
     }
   }, [messages, isTTSEnabled]);
 
-  const askGemini = async (prompt: string) => {
-    if (!apiKey) {
-      toast.error("Please provide your Gemini API key first");
-      setShowApiKeyInput(true);
-      return "I need a valid Gemini API key to provide responses.";
-    }
-
-    try {
-      // Initialize Gemini AI with the API key
-      const genAI = new GoogleGenerativeAI(apiKey);
-      
-      // Get the generative model
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      
-      // Prepare the chat prompt
-      const generationConfig = {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 1024,
-      };
-      
-      // Create education-focused system prompt
-      const educationPrompt = "You are EduBot, an educational assistant powered by Google's Gemini AI. " +
-        "You specialize in providing educational answers, explanations, and support for students and teachers. " +
-        "Keep answers clear, accurate, and age-appropriate. " +
-        "When possible, structure your responses with clear headings and bullet points for better understanding. " +
-        "If you don't know something, say so rather than making up information.";
-        
-      // Create a new chat session
-      const chat = model.startChat({
-        generationConfig,
-        history: [
-          {
-            role: "user",
-            parts: [{ text: "Please introduce yourself as EduBot" }],
-          },
-          {
-            role: "model",
-            parts: [{ text: "Hello! I'm EduBot, your educational assistant powered by Google's Gemini AI. I'm here to help students and teachers with educational questions, explanations, and support. How can I assist you with your learning today?" }],
-          },
-          {
-            role: "user",
-            parts: [{ text: educationPrompt }],
-          }
-        ],
-      });
-
-      // Send the user prompt and get response
-      const result = await chat.sendMessage(prompt);
-      const response = result.response.text();
-      return response;
-    } catch (error) {
-      console.error("Error calling Gemini AI:", error);
-      return "I'm having trouble connecting to Gemini AI. Please check your API key or try again later.";
-    }
-  };
-
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     
     if (!inputText.trim() && !isListening) return;
-    
-    // Check if API key is set
-    if (!apiKey && showApiKeyInput) {
-      toast.error("Please enter your Gemini API key first");
-      return;
-    }
     
     // Add user message
     const userMessage: Message = {
@@ -169,8 +95,15 @@ const EduBot = () => {
     setIsLoading(true);
     
     try {
-      // Get response from Gemini AI
-      const geminiResponse = await askGemini(userMessage.content);
+      // Create education-focused system prompt
+      const educationPrompt = "You are EduBot, an educational assistant powered by Google's Gemini AI. " +
+        "You specialize in providing educational answers, explanations, and support for students and teachers. " +
+        "Keep answers clear, accurate, and age-appropriate. " +
+        "When possible, structure your responses with clear headings and bullet points for better understanding. " +
+        "If you don't know something, say so rather than making up information.";
+      
+      // Get response from secure backend
+      const geminiResponse = await askGeminiSecure(userMessage.content, "chat", educationPrompt);
       
       // Add AI response
       const botMessage: Message = {
@@ -187,12 +120,13 @@ const EduBot = () => {
       // Add error message
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: "I'm having trouble processing your request. Please try again later.",
+        content: "I'm having trouble processing your request. Our system might be experiencing issues.",
         sender: "assistant",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       
       setMessages((prev) => [...prev, errorMessage]);
+      setIsBackendAvailable(false);
     } finally {
       setIsLoading(false);
     }
@@ -225,16 +159,9 @@ const EduBot = () => {
     }
   };
 
-  const handleSaveApiKey = () => {
-    if (!apiKey.trim()) {
-      toast.error("Please enter a valid API key");
-      return;
-    }
-    
-    // Save API key to local storage
-    localStorage.setItem('geminiApiKey', apiKey);
-    setShowApiKeyInput(false);
-    toast.success("API key saved successfully");
+  const handleRetryConnection = () => {
+    setIsBackendAvailable(true);
+    toast.info("Attempting to reconnect to AI services...");
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -283,28 +210,16 @@ const EduBot = () => {
               </Button>
             </div>
             
-            {showApiKeyInput ? (
+            {!isBackendAvailable ? (
               <div className="p-6 space-y-4">
-                <div className="text-sm bg-primary/5 p-4 rounded-lg border border-primary/10">
-                  <p className="font-medium text-primary mb-2">🔑 API Key Required</p>
-                  <p>To use Gemini AI features, you need to provide your Google Gemini API key. This key will be stored locally in your browser.</p>
+                <div className="text-sm bg-yellow-500/10 p-4 rounded-lg border border-yellow-500/20">
+                  <p className="font-medium text-yellow-600 mb-2">⚠️ Backend Connection Issue</p>
+                  <p>We're having trouble connecting to our AI backend services. The AI functionality may be limited until this is resolved.</p>
                 </div>
-                <div className="space-y-2">
-                  <Input
-                    type="password"
-                    placeholder="Enter your Gemini API key"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    className="bg-background/70"
-                  />
-                  <Button 
-                    onClick={handleSaveApiKey} 
-                    className="w-full bg-primary hover:bg-primary/90"
-                  >
-                    <Key className="mr-2 h-4 w-4" />
-                    Save API Key
-                  </Button>
-                </div>
+                <Button onClick={handleRetryConnection} variant="default" className="w-full">
+                  <Info className="mr-2 h-4 w-4" />
+                  Retry Connection
+                </Button>
               </div>
             ) : (
               <>
